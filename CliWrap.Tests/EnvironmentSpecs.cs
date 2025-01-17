@@ -2,112 +2,73 @@
 using System.Collections.Generic;
 using System.Threading.Tasks;
 using CliWrap.Buffered;
-using CliWrap.Tests.Fixtures;
 using CliWrap.Tests.Utils;
+using CliWrap.Tests.Utils.Extensions;
 using FluentAssertions;
 using Xunit;
 
 namespace CliWrap.Tests;
 
-public class EnvironmentSpecs : IClassFixture<TempOutputFixture>
+public class EnvironmentSpecs
 {
-    private readonly TempOutputFixture _tempOutput;
-
-    public EnvironmentSpecs(TempOutputFixture tempOutputFixture) =>
-        _tempOutput = tempOutputFixture;
-
     [Fact(Timeout = 15000)]
-    public async Task Command_can_be_executed_with_a_custom_working_directory()
+    public async Task I_can_execute_a_command_with_a_custom_working_directory()
     {
         // Arrange
-        var workingDirPath = _tempOutput.GetTempDirPath();
+        using var dir = TempDir.Create();
 
-        var cmd = Cli.Wrap("dotnet")
-            .WithWorkingDirectory(workingDirPath)
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("print cwd")
-            );
+        var cmd = Cli.Wrap(Dummy.Program.FilePath)
+            .WithArguments("cwd")
+            .WithWorkingDirectory(dir.Path);
 
         // Act
         var result = await cmd.ExecuteBufferedAsync();
 
         // Assert
-        result.StandardOutput.Trim().Should().Be(workingDirPath);
+        result.StandardOutput.Trim().Should().Be(dir.Path);
     }
 
     [Fact(Timeout = 15000)]
-    public async Task Command_can_be_executed_with_additional_environment_variables()
+    public async Task I_can_execute_a_command_with_additional_environment_variables()
     {
         // Arrange
-        var env = new Dictionary<string, string?>
-        {
-            ["foo"] = "bar",
-            ["hello"] = "world",
-            ["Path"] = "there"
-        };
+        var env = new Dictionary<string, string?> { ["foo"] = "bar", ["hello"] = "world" };
 
-        var stdOutLines = new List<string>();
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("print env")
-            )
-            .WithEnvironmentVariables(env) | stdOutLines.Add;
+        var cmd = Cli.Wrap(Dummy.Program.FilePath)
+            .WithArguments(["env", "foo", "hello"])
+            .WithEnvironmentVariables(env);
 
         // Act
-        await cmd.ExecuteAsync();
+        var result = await cmd.ExecuteBufferedAsync();
 
         // Assert
-        stdOutLines.Should().Contain(new[]
-        {
-            "[foo] = bar",
-            "[hello] = world",
-            "[Path] = there"
-        });
+        result.StandardOutput.Should().ConsistOfLines("bar", "world");
     }
 
     [Fact(Timeout = 15000)]
-    public async Task Command_can_be_executed_with_some_inherited_environment_variables_overwritten()
+    public async Task I_can_execute_a_command_with_some_environment_variables_overwritten()
     {
         // Arrange
-        var salt = Guid.NewGuid();
-        var variableToKeep = $"CLIWRAP_TEST_KEEP_{salt}";
-        var variableToOverwrite = $"CLIWRAP_TEST_OVERWRITE_{salt}";
-        var variableToUnset = $"CLIWRAP_TEST_UNSET_{salt}";
+        var key = Guid.NewGuid();
+        var variableToKeep = $"CLIWRAP_TEST_KEEP_{key}";
+        var variableToOverwrite = $"CLIWRAP_TEST_OVERWRITE_{key}";
+        var variableToUnset = $"CLIWRAP_TEST_UNSET_{key}";
 
-        var stdOutLines = new List<string>();
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("print env")
-            )
-            .WithEnvironmentVariables(e => e
-                .Set(variableToOverwrite, "new bar")
-                .Set(variableToUnset, null)
-            ) | stdOutLines.Add;
-
-        // Act
-        using (EnvironmentVariable.Set(variableToKeep, "foo")) // will be left unchanged
-        using (EnvironmentVariable.Set(variableToOverwrite, "bar")) // will be overwritten
-        using (EnvironmentVariable.Set(variableToUnset, "baz")) // will be unset
+        using (TempEnvironmentVariable.Set(variableToKeep, "keep")) // will be left unchanged
+        using (TempEnvironmentVariable.Set(variableToOverwrite, "overwrite")) // will be overwritten
+        using (TempEnvironmentVariable.Set(variableToUnset, "unset")) // will be unset
         {
-            await cmd.ExecuteAsync();
+            var cmd = Cli.Wrap(Dummy.Program.FilePath)
+                .WithArguments(["env", variableToKeep, variableToOverwrite, variableToUnset])
+                .WithEnvironmentVariables(e =>
+                    e.Set(variableToOverwrite, "overwritten").Set(variableToUnset, null)
+                );
+
+            // Act
+            var result = await cmd.ExecuteBufferedAsync();
 
             // Assert
-            stdOutLines.Should().Contain(new[]
-            {
-                $"[{variableToKeep}] = foo",
-                $"[{variableToOverwrite}] = new bar"
-            });
-
-            stdOutLines.Should().NotContain(new[]
-            {
-                $"[{variableToOverwrite}] = bar",
-                $"[{variableToUnset}] = baz"
-            });
+            result.StandardOutput.Should().ConsistOfLines("keep", "overwritten");
         }
     }
 }

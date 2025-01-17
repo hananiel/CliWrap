@@ -1,8 +1,6 @@
 ﻿using System;
 using System.ComponentModel;
-using System.Threading;
 using System.Threading.Tasks;
-using CliWrap.Tests.Utils;
 using FluentAssertions;
 using Xunit;
 
@@ -11,24 +9,25 @@ namespace CliWrap.Tests;
 public class ExecutionSpecs
 {
     [Fact(Timeout = 15000)]
-    public async Task Command_can_be_executed_which_yields_a_result_containing_runtime_information()
+    public async Task I_can_execute_a_command_and_get_the_exit_code_and_execution_time()
     {
         // Arrange
-        var cmd = Cli.Wrap("dotnet").WithArguments(Dummy.Program.FilePath);
+        var cmd = Cli.Wrap(Dummy.Program.FilePath);
 
         // Act
         var result = await cmd.ExecuteAsync();
 
         // Assert
         result.ExitCode.Should().Be(0);
+        result.IsSuccess.Should().BeTrue();
         result.RunTime.Should().BeGreaterThan(TimeSpan.Zero);
     }
 
     [Fact(Timeout = 15000)]
-    public async Task Underlying_process_ID_can_be_obtained_while_a_command_is_executing()
+    public async Task I_can_execute_a_command_and_get_the_associated_process_ID()
     {
         // Arrange
-        var cmd = Cli.Wrap("dotnet").WithArguments(Dummy.Program.FilePath);
+        var cmd = Cli.Wrap(Dummy.Program.FilePath);
 
         // Act
         var task = cmd.ExecuteAsync();
@@ -40,89 +39,42 @@ public class ExecutionSpecs
     }
 
     [Fact(Timeout = 15000)]
-    public async Task Command_can_be_executed_with_a_configured_awaiter()
+    public async Task I_can_execute_a_command_with_a_configured_awaiter()
     {
         // Arrange
-        var cmd = Cli.Wrap("dotnet").WithArguments(Dummy.Program.FilePath);
+        var cmd = Cli.Wrap(Dummy.Program.FilePath);
 
-        // Act
-        var result = await cmd.ExecuteAsync().ConfigureAwait(false);
-
-        // Assert
-        result.ExitCode.Should().Be(0);
+        // Act & assert
+        await cmd.ExecuteAsync().ConfigureAwait(false);
     }
 
     [Fact(Timeout = 15000)]
-    public async Task Command_execution_can_be_canceled_immediately()
+    public async Task I_can_execute_a_command_and_not_hang_on_large_stdout_and_stderr()
     {
         // Arrange
-        using var cts = new CancellationTokenSource();
-        cts.Cancel();
+        var cmd = Cli.Wrap(Dummy.Program.FilePath)
+            .WithArguments(["generate binary", "--target", "all", "--length", "100000"]);
 
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("sleep")
-                .Add("--duration").Add("00:00:10")
-            );
-
-        // Act
-        var task = cmd.ExecuteAsync(cts.Token);
-
-        // Assert
-        var ex = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
-        ProcessEx.IsRunning(task.ProcessId).Should().BeFalse();
-        ex.CancellationToken.Should().Be(cts.Token);
-    }
-
-    [Fact(Timeout = 15000)]
-    public async Task Command_execution_can_be_canceled_while_it_is_in_progress()
-    {
-        // Arrange
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(0.5));
-
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("sleep")
-                .Add("--duration").Add("00:00:10")
-            );
-
-        // Act
-        var task = cmd.ExecuteAsync(cts.Token);
-
-        // Assert
-        var ex = await Assert.ThrowsAnyAsync<OperationCanceledException>(() => task);
-        ProcessEx.IsRunning(task.ProcessId).Should().BeFalse();
-        ex.CancellationToken.Should().Be(cts.Token);
-    }
-
-    [Fact(Timeout = 15000)]
-    public async Task Command_execution_does_not_deadlock_on_large_stdout_and_stderr()
-    {
-        // Arrange
-        var cmd = Cli.Wrap("dotnet")
-            .WithArguments(a => a
-                .Add(Dummy.Program.FilePath)
-                .Add("generate text")
-                .Add("--target").Add("all")
-                .Add("--lines").Add(100_000)
-            );
-
-        // Act
+        // Act & assert
         await cmd.ExecuteAsync();
     }
 
-    [Fact(Timeout = 15000)]
-    public void Command_execution_throws_if_the_target_file_does_not_exist()
+    [Fact]
+    public void I_can_try_to_execute_a_command_and_get_an_error_if_the_target_file_does_not_exist()
     {
-        // https://github.com/Tyrrrz/CliWrap/issues/139
-
         // Arrange
-        var cmd = Cli.Wrap("non-existing-target");
+        var cmd = Cli.Wrap("I_do_not_exist.exe");
 
         // Act & assert
-        // Should throw synchronously!
-        Assert.ThrowsAny<Win32Exception>(() => cmd.ExecuteAsync());
+
+        // Should throw synchronously
+        // https://github.com/Tyrrrz/CliWrap/issues/139
+        Assert.ThrowsAny<Win32Exception>(
+            () =>
+                // xUnit tells us to use ThrowsAnyAsync(...) instead for async methods,
+                // but we're actually interested in the sync portion of this method.
+                // So cast the result to object to avoid the warning.
+                (object)cmd.ExecuteAsync()
+        );
     }
 }

@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers;
 using System.Threading.Tasks;
 using CliFx;
 using CliFx.Attributes;
@@ -17,28 +18,26 @@ public class GenerateBinaryCommand : ICommand
     public OutputTarget Target { get; init; } = OutputTarget.StdOut;
 
     [CommandOption("length")]
-    public long Length { get; init; } = 1_000_000;
+    public long Length { get; init; } = 100_000;
 
     [CommandOption("buffer")]
     public int BufferSize { get; init; } = 1024;
 
     public async ValueTask ExecuteAsync(IConsole console)
     {
-        var buffer = new byte[BufferSize];
-        var bytesRemaining = Length;
+        using var buffer = MemoryPool<byte>.Shared.Rent(BufferSize);
 
-        while (bytesRemaining > 0)
+        var totalBytesGenerated = 0L;
+        while (totalBytesGenerated < Length)
         {
-            _random.NextBytes(buffer);
+            _random.NextBytes(buffer.Memory.Span);
 
-            var bytesToWrite = Math.Min((int)bytesRemaining, buffer.Length);
+            var bytesWanted = (int)Math.Min(buffer.Memory.Length, Length - totalBytesGenerated);
 
             foreach (var writer in console.GetWriters(Target))
-            {
-                await writer.BaseStream.WriteAsync(buffer.AsMemory(0, bytesToWrite));
-            }
+                await writer.BaseStream.WriteAsync(buffer.Memory[..bytesWanted]);
 
-            bytesRemaining -= bytesToWrite;
+            totalBytesGenerated += bytesWanted;
         }
     }
 }

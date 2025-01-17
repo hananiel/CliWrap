@@ -3,37 +3,32 @@
 namespace CliWrap;
 
 /// <summary>
-/// Result of command execution.
+/// Result of a command execution.
 /// </summary>
-public class CommandResult
+public class CommandResult(int exitCode, DateTimeOffset startTime, DateTimeOffset exitTime)
 {
     /// <summary>
     /// Exit code set by the underlying process.
     /// </summary>
-    public int ExitCode { get; }
+    public int ExitCode { get; } = exitCode;
 
     /// <summary>
-    /// Point in time at which the command has started executing.
+    /// Whether the command execution was successful (i.e. exit code is zero).
     /// </summary>
-    public DateTimeOffset StartTime { get; }
+    public bool IsSuccess => ExitCode == 0;
 
     /// <summary>
-    /// Point in time at which the command has finished executing.
+    /// Time at which the command started executing.
     /// </summary>
-    public DateTimeOffset ExitTime { get; }
+    public DateTimeOffset StartTime { get; } = startTime;
 
     /// <summary>
-    /// Total duration of the execution.
+    /// Time at which the command finished executing.
+    /// </summary>
+    public DateTimeOffset ExitTime { get; } = exitTime;
+
+    /// <summary>
+    /// Total duration of the command execution.
     /// </summary>
     public TimeSpan RunTime => ExitTime - StartTime;
-
-    /// <summary>
-    /// Initializes an instance of <see cref="CommandResult" />.
-    /// </summary>
-    public CommandResult(int exitCode, DateTimeOffset startTime, DateTimeOffset exitTime)
-    {
-        ExitCode = exitCode;
-        StartTime = startTime;
-        ExitTime = exitTime;
-    }
 }

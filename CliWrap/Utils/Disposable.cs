@@ -2,18 +2,11 @@
 
 namespace CliWrap.Utils;
 
-internal partial class Disposable : IDisposable
+internal class Disposable(Action dispose) : IDisposable
 {
-    private readonly Action _dispose;
+    public static IDisposable Null { get; } = Create(() => { });
 
-    public Disposable(Action dispose) => _dispose = dispose;
-
-    public void Dispose() => _dispose();
-}
-
-internal partial class Disposable
-{
     public static IDisposable Create(Action dispose) => new Disposable(dispose);
 
-    public static IDisposable Null { get; } = Create(() => { });
+    public void Dispose() => dispose();
 }
