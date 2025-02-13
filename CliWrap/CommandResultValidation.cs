@@ -3,7 +3,7 @@
 namespace CliWrap;
 
 /// <summary>
-/// Strategy used for validating the result of command execution.
+/// Strategy used for validating the result of a command execution.
 /// </summary>
 [Flags]
 public enum CommandResultValidation
@@ -16,7 +16,7 @@ public enum CommandResultValidation
     /// <summary>
     /// Ensure that the command returned a zero exit code.
     /// </summary>
-    ZeroExitCode = 0b1
+    ZeroExitCode = 0b1,
 }
 
 internal static class CommandResultValidationExtensions

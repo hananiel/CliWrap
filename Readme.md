@@ -1,17 +1,25 @@
 # CliWrap
 
-[![Made in Ukraine](https://img.shields.io/badge/made_in-ukraine-ffd700.svg?labelColor=0057b7)](https://vshymanskyy.github.io/StandWithUkraine)
-[![Build](https://img.shields.io/github/workflow/status/Tyrrrz/CliWrap/CI/master)](https://github.com/Tyrrrz/CliWrap/actions)
+[![Status](https://img.shields.io/badge/status-active-47c219.svg)](https://github.com/Tyrrrz/.github/blob/master/docs/project-status.md)
+[![Made in Ukraine](https://img.shields.io/badge/made_in-ukraine-ffd700.svg?labelColor=0057b7)](https://tyrrrz.me/ukraine)
+[![Build](https://img.shields.io/github/actions/workflow/status/Tyrrrz/CliWrap/main.yml?branch=master)](https://github.com/Tyrrrz/CliWrap/actions)
 [![Coverage](https://img.shields.io/codecov/c/github/Tyrrrz/CliWrap/master)](https://codecov.io/gh/Tyrrrz/CliWrap)
 [![Version](https://img.shields.io/nuget/v/CliWrap.svg)](https://nuget.org/packages/CliWrap)
 [![Downloads](https://img.shields.io/nuget/dt/CliWrap.svg)](https://nuget.org/packages/CliWrap)
 [![Discord](https://img.shields.io/discord/869237470565392384?label=discord)](https://discord.gg/2SUWKFnHSm)
-[![Donate](https://img.shields.io/badge/donate-$$$-8a2be2.svg)](https://tyrrrz.me/donate)
 [![Fuck Russia](https://img.shields.io/badge/fuck-russia-e4181c.svg?labelColor=000000)](https://twitter.com/tyrrrz/status/1495972128977571848)
 
-> 🟢 **Project status**: active<sup>[[?]](https://github.com/Tyrrrz/.github/blob/master/docs/project-status.md)</sup>
+<table>
+    <tr>
+        <td width="99999" align="center">Development of this project is entirely funded by the community. <b><a href="https://tyrrrz.me/donate">Consider donating to support!</a></b></td>
+    </tr>
+</table>
 
-**CliWrap** is a library for interacting with external command line interfaces.
+<p align="center">
+    <img src="favicon.png" alt="Icon" />
+</p>
+
+**CliWrap** is a library for interacting with external command-line interfaces.
 It provides a convenient model for launching processes, redirecting input and output streams, awaiting completion, handling cancellation, and more.
 
 ## Terms of use<sup>[[?]](https://github.com/Tyrrrz/.github/blob/master/docs/why-so-political.md)</sup>
@@ -23,7 +31,7 @@ By using this project or its source code, for any purpose and in any shape or fo
 - You **support Ukraine's territorial integrity, including its claims over temporarily occupied territories of Crimea and Donbas**
 - You **reject false narratives perpetuated by Russian state propaganda**
 
-To learn more about the war and how you can help, [click here](https://tyrrrz.me). Glory to Ukraine! 🇺🇦
+To learn more about the war and how you can help, [click here](https://tyrrrz.me/ukraine). Glory to Ukraine! 🇺🇦
 
 ## Install
 
@@ -35,17 +43,18 @@ To learn more about the war and how you can help, [click here](https://tyrrrz.me
 - Fluent configuration interface
 - Flexible support for piping
 - Fully asynchronous and cancellation-aware API
+- Graceful cancellation using interrupt signals
 - Designed with strict immutability in mind
 - Provides safety against typical deadlock scenarios
 - Tested on Windows, Linux, and macOS
-- Targets .NET Standard 2.0+, .NET Core 3.0+, .NET Framework 4.6.1+
+- Targets .NET Standard 2.0+, .NET Core 3.0+, .NET Framework 4.6.2+
 - No external dependencies
 
 ## Usage
 
 ### Video guides
 
-You can watch one of these videos to get a quick and detailed overview of the library:
+You can watch one of these videos to learn how to use the library:
 
 - [**OSS Power-Ups: CliWrap**](https://youtube.com/watch?v=3_Ucw3Fflmo) by [Oleksii Holub](https://twitter.com/tyrrrz)
 
@@ -57,7 +66,7 @@ You can watch one of these videos to get a quick and detailed overview of the li
 
 ### Quick overview
 
-Similarly to a shell, **CliWrap**'s base unit of work is a **command** — an object that encodes instructions for running a process.
+Similarly to a shell, **CliWrap**'s base unit of work is a **command** — an object that encapsulates instructions for running a process.
 To build a command, start by calling `Cli.Wrap(...)` with the executable path, and then use the provided fluent interface to configure arguments, working directory, or other options.
 Once the command is configured, you can run it by calling `ExecuteAsync()`:
 
@@ -65,19 +74,20 @@ Once the command is configured, you can run it by calling `ExecuteAsync()`:
 using CliWrap;
 
 var result = await Cli.Wrap("path/to/exe")
-    .WithArguments("--foo bar")
+    .WithArguments(["--foo", "bar"])
     .WithWorkingDirectory("work/dir/path")
     .ExecuteAsync();
 
 // Result contains:
+// -- result.IsSuccess       (bool)
 // -- result.ExitCode        (int)
 // -- result.StartTime       (DateTimeOffset)
 // -- result.ExitTime        (DateTimeOffset)
 // -- result.RunTime         (TimeSpan)
 ```
 
-The code above spawns a child process with the configured command line arguments and working directory, and then asynchronously waits for it to exit.
-After the task has completed, it resolves to a `CommandResult` object that contains the process exit code and other related information.
+The code above spawns a child process with the configured command-line arguments and working directory, and then asynchronously waits for it to exit.
+After the task has completed, it resolves to a `CommandResult` object that contains the process exit code and other relevant information.
 
 > **Warning**:
 > **CliWrap** will throw an exception if the underlying process returns a non-zero exit code, as it usually indicates an error.
@@ -87,14 +97,15 @@ By default, the process's standard input, output and error streams are routed to
 You can change this by calling `WithStandardInputPipe(...)`, `WithStandardOutputPipe(...)`, or `WithStandardErrorPipe(...)` to configure pipes for the corresponding streams:
 
 ```csharp
+using CliWrap;
+
 var stdOutBuffer = new StringBuilder();
 var stdErrBuffer = new StringBuilder();
 
-// ⚠ This particular example can also be simplified with ExecuteBufferedAsync().
-// Continue reading below!
 var result = await Cli.Wrap("path/to/exe")
-    .WithArguments("--foo bar")
+    .WithArguments(["--foo", "bar"])
     .WithWorkingDirectory("work/dir/path")
+    // This can be simplified with `ExecuteBufferedAsync()`
     .WithStandardOutputPipe(PipeTarget.ToStringBuilder(stdOutBuffer))
     .WithStandardErrorPipe(PipeTarget.ToStringBuilder(stdErrBuffer))
     .ExecuteAsync();
@@ -104,8 +115,8 @@ var stdOut = stdOutBuffer.ToString();
 var stdErr = stdErrBuffer.ToString();
 ```
 
-This example command is configured to decode the data written to standard output and error streams as text, and append it to the corresponding `StringBuilder` buffers.
-After the execution is complete, these buffers can be inspected to see what the process has printed to the console.
+This example command is configured to decode the data written to the standard output and error streams as text, and append it to the corresponding `StringBuilder` buffers.
+Once the execution is complete, these buffers can be inspected to see what the process has printed to the console.
 
 Handling command output is a very common use case, so **CliWrap** offers a few high-level [execution models](#execution-models) to make these scenarios simpler.
 In particular, the same thing shown above can also be achieved more succinctly with the `ExecuteBufferedAsync()` extension method:
@@ -117,11 +128,12 @@ using CliWrap.Buffered;
 // Calling `ExecuteBufferedAsync()` instead of `ExecuteAsync()`
 // implicitly configures pipes that write to in-memory buffers.
 var result = await Cli.Wrap("path/to/exe")
-    .WithArguments("--foo bar")
+    .WithArguments(["--foo", "bar"])
     .WithWorkingDirectory("work/dir/path")
     .ExecuteBufferedAsync();
 
 // Result contains:
+// -- result.IsSuccess       (bool)
 // -- result.StandardOutput  (string)
 // -- result.StandardError   (string)
 // -- result.ExitCode        (int)
@@ -132,47 +144,40 @@ var result = await Cli.Wrap("path/to/exe")
 
 > **Warning**:
 > Be mindful when using `ExecuteBufferedAsync()`.
-> Programs can write arbitrary data (including binary) to output and error streams, which may be impractical to buffer in-memory.
+> Programs can write arbitrary data (including binary) to the output and error streams, and storing it in-memory may be impractical.
 > For more advanced scenarios, **CliWrap** also provides other piping options, which are covered in the [piping section](#piping).
 
 ### Command configuration
 
-The fluent interface provided by the command object allows you to configure various options related to its execution.
-Below list covers all available configuration methods and their usage.
+The fluent interface provided by the command object allows you to configure various aspects of its execution.
+This section covers all available configuration methods and their usage.
 
 > **Note**:
 > `Command` is an immutable object — all configuration methods listed here create a new instance instead of modifying the existing one.
 
 #### `WithArguments(...)`
 
-Sets the command line arguments passed to the child process.
+Sets the command-line arguments passed to the child process.
 
 **Default**: empty.
 
 **Examples**:
 
-- Set arguments from a string:
+- Set arguments using an array:
 
 ```csharp
 var cmd = Cli.Wrap("git")
-    .WithArguments("commit -m \"my commit\"");
+    // Each element is formatted as a separate argument.
+    // Equivalent to: `git commit -m "my commit"`
+    .WithArguments(["commit", "-m", "my commit"]);
 ```
 
-> **Warning**:
-> Unless you absolutely have to, avoid setting command arguments from a string.
-> This method expects that all of the arguments are already escaped and formatted correctly — which can be really hard to get right.
-
-- Set arguments from an array — each element is treated as a separate argument and spaces are escaped automatically:
+- Set arguments using a builder:
 
 ```csharp
 var cmd = Cli.Wrap("git")
-    .WithArguments(new[] {"commit", "-m", "my commit"});
-```
-
-- Set arguments using a builder — same as above, but also works with non-string arguments and can be [enhanced with your own extension methods](https://twitter.com/Tyrrrz/status/1409104223753605121):
-
-```csharp
-var cmd = Cli.Wrap("git")
+    // Each Add(...) call takes care of formatting automatically.
+    // Equivalent to: `git clone https://github.com/Tyrrrz/CliWrap --depth 20`
     .WithArguments(args => args
         .Add("clone")
         .Add("https://github.com/Tyrrrz/CliWrap")
@@ -181,9 +186,42 @@ var cmd = Cli.Wrap("git")
     );
 ```
 
+```csharp
+var forcePush = true;
+
+var cmd = Cli.Wrap("git")
+    // Arguments can also be constructed in an imperative fashion.
+    // Equivalent to: `git push --force`
+    .WithArguments(args => 
+    {
+        args.Add("push");
+
+        if (forcePush)
+            args.Add("--force");
+    });
+```
+
 > **Note**:
-> You can also manually instantiate `ArgumentsBuilder` to help with the formatting and escaping of arguments.
-> This may be useful if you need to generate an argument string outside of the `WithArguments(...)` method.
+> The builder overload allows you to define custom extension methods for reusable argument patterns.
+> [Learn more](https://twitter.com/Tyrrrz/status/1409104223753605121).
+
+- Set arguments directly:
+
+```csharp
+var cmd = Cli.Wrap("git")
+    // Avoid using this overload unless you really have to.
+    // Equivalent to: `git commit -m "my commit"`
+    .WithArguments("commit -m \"my commit\"");
+```
+
+> **Warning**:
+> Unless you absolutely have to, avoid setting command-line arguments directly from a string.
+> This method expects all arguments to be correctly escaped and formatted ahead of time — which can be cumbersome to do yourself.
+> Formatting errors may result in unexpected bugs and security vulnerabilities.
+
+> **Note**:
+> There are some [obscure scenarios](https://github.com/Tyrrrz/CliWrap/issues/263), where you may need to assemble the command-line arguments yourself.
+> In such cases, you can use the `ArgumentsBuilder.Escape(...)` method to escape individual arguments manually.
 
 #### `WithWorkingDirectory(...)`
 
@@ -206,17 +244,6 @@ Sets additional environment variables exposed to the child process.
 
 **Examples**:
 
-- Set environment variables from a dictionary:
-
-```csharp
-var cmd = Cli.Wrap("git")
-    .WithEnvironmentVariables(new Dictionary<string, string?>
-    {
-        ["GIT_AUTHOR_NAME"] = "John",
-        ["GIT_AUTHOR_EMAIL"] = "john@email.com"
-    });
-```
-
 - Set environment variables using a builder:
 
 ```csharp
@@ -227,29 +254,63 @@ var cmd = Cli.Wrap("git")
     );
 ```
 
+- Set environment variables directly:
+
+```csharp
+var cmd = Cli.Wrap("git")
+    .WithEnvironmentVariables(new Dictionary<string, string?>
+    {
+        ["GIT_AUTHOR_NAME"] = "John",
+        ["GIT_AUTHOR_EMAIL"] = "john@email.com"
+    });
+```
+
 > **Note**:
 > Environment variables configured using `WithEnvironmentVariables(...)` are applied on top of those inherited from the parent process.
 > If you need to remove an inherited variable, set the corresponding value to `null`.
 
+#### `WithResourcePolicy(...)`
+
+Sets the system resource management policy for the child process.
+
+**Default**: default policy.
+
+**Examples**:
+
+- Set resource policy using a builder:
+
+```csharp
+var cmd = Cli.Wrap("git")
+    .WithResourcePolicy(policy => policy
+        .SetPriority(ProcessPriorityClass.High)
+        .SetAffinity(0b1010)
+        .SetMinWorkingSet(1024)
+        .SetMaxWorkingSet(4096)
+    );
+```
+
+- Set resource policy directly:
+
+```csharp
+var cmd = Cli.Wrap("git")
+    .WithResourcePolicy(new ResourcePolicy(
+        priority: ProcessPriorityClass.High,
+        affinity: 0b1010,
+        minWorkingSet: 1024,
+        maxWorkingSet: 4096
+    ));
+```
+
+> **Warning**:
+> Resource policy options have varying support across different platforms.
+
 #### `WithCredentials(...)`
 
-Sets domain, name and password of the user, under whom the child process is started.
+Sets domain, name and password of the user, under whom the child process should be started.
 
 **Default**: no credentials.
 
 **Examples**:
-
-- Set credentials directly:
-
-```csharp
-var cmd = Cli.Wrap("git")
-    .WithCredentials(new Credentials(
-        domain: "some_workspace",
-        userName: "johndoe",
-        password: "securepassword123",
-        loadUserProfile: true
-    ));
-```
 
 - Set credentials using a builder:
 
@@ -261,6 +322,18 @@ var cmd = Cli.Wrap("git")
        .SetPassword("securepassword123")
        .LoadUserProfile()
     );
+```
+
+- Set credentials directly:
+
+```csharp
+var cmd = Cli.Wrap("git")
+    .WithCredentials(new Credentials(
+        domain: "some_workspace",
+        userName: "johndoe",
+        password: "securepassword123",
+        loadUserProfile: true
+    ));
 ```
 
 > **Warning**:
@@ -279,7 +352,7 @@ Sets the strategy for validating the result of an execution.
 
 **Examples**:
 
-- Enable validation — will throw an exception if the process exits with a non-zero exit code:
+- Enable validation:
 
 ```csharp
 var cmd = Cli.Wrap("git")
@@ -293,13 +366,29 @@ var cmd = Cli.Wrap("git")
     .WithValidation(CommandResultValidation.None);
 ```
 
+If you want to throw a custom exception when the process exits with a non-zero exit code, don't disable result validation, but instead catch the default `CommandExecutionException` and re-throw it inside your own exception.
+This way you can preserve the information provided by the original exception, while extending it with additional context:
+
+```csharp
+try
+{
+    await Cli.Wrap("git").ExecuteAsync();
+}
+catch (CommandExecutionException ex)
+{
+    // Re-throw the original exception to preserve additional information
+    // about the command that failed (exit code, arguments, etc.).
+    throw new MyException("Failed to run the git command-line tool.", ex);
+}
+```
+
 #### `WithStandardInputPipe(...)`
 
 Sets the pipe source that will be used for the standard _input_ stream of the process.
 
 **Default**: `PipeSource.Null`.
 
-_Read more about this method in the [piping section](#piping)._
+Read more about this method in the [piping section](#piping).
 
 #### `WithStandardOutputPipe(...)`
 
@@ -307,7 +396,7 @@ Sets the pipe target that will be used for the standard _output_ stream of the p
 
 **Default**: `PipeTarget.Null`.
 
-_Read more about this method in the [piping section](#piping)._
+Read more about this method in the [piping section](#piping).
 
 #### `WithStandardErrorPipe(...)`
 
@@ -315,14 +404,14 @@ Sets the pipe target that will be used for the standard _error_ stream of the pr
 
 **Default**: `PipeTarget.Null`.
 
-_Read more about this method in the [piping section](#piping)._
+Read more about this method in the [piping section](#piping).
 
 ### Piping
 
 **CliWrap** provides a very powerful and flexible piping model that allows you to redirect process's streams, transform input and output data, and even chain multiple commands together with minimal effort.
 At its core, it's based on two abstractions: `PipeSource` which provides data for the standard input stream, and `PipeTarget` which reads data coming from the standard output stream or the standard error stream.
 
-By default, command's input pipe is set to `PipeSource.Null` and the output and error pipes are set to `PipeTarget.Null`.
+By default, a command's input pipe is set to `PipeSource.Null` and the output and error pipes are set to `PipeTarget.Null`.
 These objects effectively represent no-op stubs that provide empty input and discard all output respectively.
 
 You can specify your own `PipeSource` and `PipeTarget` instances by calling the corresponding configuration methods on the command:
@@ -353,14 +442,14 @@ Both `PipeSource` and `PipeTarget` have many factory methods that let you create
   - `PipeSource.FromStream(...)` — pipes data from any readable stream
   - `PipeSource.FromFile(...)` — pipes data from a file
   - `PipeSource.FromBytes(...)` — pipes data from a byte array
-  - `PipeSource.FromString(...)` — pipes from a text string
+  - `PipeSource.FromString(...)` — pipes data from a text string
   - `PipeSource.FromCommand(...)` — pipes data from the standard output of another command
 - `PipeTarget`:
   - `PipeTarget.Null` — represents a pipe target that discards all data
-  - `PipeTarget.ToStream(...)` — pipes data into any writable stream
-  - `PipeTarget.ToFile(...)` — pipes data into a file
+  - `PipeTarget.ToStream(...)` — pipes data to any writable stream
+  - `PipeTarget.ToFile(...)` — pipes data to a file
   - `PipeTarget.ToStringBuilder(...)` — pipes data as text into a `StringBuilder`
-  - `PipeTarget.ToDelegate(...)` — pipes data as text, line-by-line, into an `Action<string>` or a `Func<string, Task>`
+  - `PipeTarget.ToDelegate(...)` — pipes data as text, line-by-line, into an `Action<string>`, or a `Func<string, Task>`, or a `Func<string, CancellationToken, Task>` delegate
   - `PipeTarget.Merge(...)` — merges multiple outbound pipes by replicating the same data across all of them
 
 > **Warning**:
@@ -449,8 +538,8 @@ await cmd.ExecuteAsync();
 ```csharp
 var cmd =
     "Hello world" |
-    Cli.Wrap("foo").WithArguments("aaa") |
-    Cli.Wrap("bar").WithArguments("bbb") |
+    Cli.Wrap("foo").WithArguments(["aaa"]) |
+    Cli.Wrap("bar").WithArguments(["bbb"]) |
     (Console.WriteLine, Console.Error.WriteLine);
 
 await cmd.ExecuteAsync();
@@ -463,7 +552,7 @@ These are essentially just extension methods that work by leveraging the [piping
 
 #### Buffered execution
 
-This execution model lets you run a process while buffering its standard output and error streams in-memory.
+This execution model lets you run a process while buffering its standard output and error streams in-memory as text.
 The buffered data can then be accessed after the command finishes executing.
 
 In order to execute a command with buffering, call the `ExecuteBufferedAsync()` extension method:
@@ -472,8 +561,8 @@ In order to execute a command with buffering, call the `ExecuteBufferedAsync()` 
 using CliWrap;
 using CliWrap.Buffered;
 
-var result = await Cli.Wrap("path/to/exe")
-    .WithArguments("--foo bar")
+var result = await Cli.Wrap("foo")
+    .WithArguments(["bar"])
     .ExecuteBufferedAsync();
 
 var exitCode = result.ExitCode;
@@ -481,32 +570,35 @@ var stdOut = result.StandardOutput;
 var stdErr = result.StandardError;
 ```
 
-By default, `ExecuteBufferedAsync()` assumes that the underlying process uses the default encoding (`Console.OutputEncoding`) for writing text to the console.
+By default, `ExecuteBufferedAsync()` assumes that the underlying process uses the default encoding (`Encoding.Default`) for writing text to the console.
 To override this, specify the encoding explicitly by using one of the available overloads:
 
 ```csharp
 // Treat both stdout and stderr as UTF8-encoded text streams
-var result = await Cli.Wrap("path/to/exe")
-    .WithArguments("--foo bar")
+var result = await Cli.Wrap("foo")
+    .WithArguments(["bar"])
     .ExecuteBufferedAsync(Encoding.UTF8);
 
 // Treat stdout as ASCII-encoded and stderr as UTF8-encoded
-var result = await Cli.Wrap("path/to/exe")
-    .WithArguments("--foo bar")
+var result = await Cli.Wrap("foo")
+    .WithArguments(["bar"])
     .ExecuteBufferedAsync(Encoding.ASCII, Encoding.UTF8);
 ```
+
+> **Note**:
+> If the underlying process returns a non-zero exit code, `ExecuteBufferedAsync()` will throw an exception similarly to `ExecuteAsync()`, but the exception message will also include the standard error data.
 
 #### Pull-based event stream
 
 Besides executing a command as a task, **CliWrap** also supports an alternative model, in which the execution is represented as an event stream.
-This lets you start a command and react to the events it produces in real-time.
+This lets you start a process and react to the events it produces in real-time.
 
 Those events are:
 
-- `StartedCommandEvent` — received just once, when the command starts executing (contains process ID)
+- `StartedCommandEvent` — received just once, when the command starts executing (contains the process ID)
 - `StandardOutputCommandEvent` — received every time the underlying process writes a new line to the output stream (contains the text as a string)
 - `StandardErrorCommandEvent` — received every time the underlying process writes a new line to the error stream (contains the text as a string)
-- `ExitedCommandEvent` — received just once, when the command finishes executing (contains exit code)
+- `ExitedCommandEvent` — received just once, when the command finishes executing (contains the exit code)
 
 To execute a command as a _pull-based_ event stream, use the `ListenAsync()` extension method:
 
@@ -514,7 +606,7 @@ To execute a command as a _pull-based_ event stream, use the `ListenAsync()` ext
 using CliWrap;
 using CliWrap.EventStream;
 
-var cmd = Cli.Wrap("foo").WithArguments("bar");
+var cmd = Cli.Wrap("foo").WithArguments(["bar"]);
 
 await foreach (var cmdEvent in cmd.ListenAsync())
 {
@@ -547,9 +639,11 @@ When using this execution model, back pressure is facilitated by locking the pip
 Similarly to the pull-based stream, you can also execute a command as a _push-based_ event stream instead:
 
 ```csharp
+using System.Reactive;
 using CliWrap;
 using CliWrap.EventStream;
-using System.Reactive;
+
+var cmd = Cli.Wrap("foo").WithArguments(["bar"]);
 
 await cmd.Observe().ForEachAsync(cmdEvent =>
 {
@@ -574,7 +668,7 @@ await cmd.Observe().ForEachAsync(cmdEvent =>
 In this case, `Observe()` returns a cold `IObservable<CommandEvent>` that represents an observable stream of command events.
 You can use the set of extensions provided by [Rx.NET](https://github.com/dotnet/reactive) to transform, filter, throttle, or otherwise manipulate this stream.
 
-Unlike the pull-based event stream, this execution model does not involve any back pressure, meaning that the data is pushed to the observer at the rate it becomes available.
+Unlike the pull-based event stream, this execution model does not involve any back pressure, meaning that the data is pushed to the observer at the rate that it becomes available.
 
 > **Note**:
 > Similarly to `ExecuteBufferedAsync()`, you can specify custom encoding for `Observe()` using one of its overloads.
@@ -605,15 +699,18 @@ await foreach (var cmdEvent in cmd.ListenAsync())
 Command execution is asynchronous in nature as it involves a completely separate process.
 In many cases, it may be useful to implement an abortion mechanism to stop the execution before it finishes, either through a manual trigger or a timeout.
 
-To do that, just pass the corresponding `CancellationToken` when calling `ExecuteAsync()`:
+To do that, issue the corresponding [`CancellationToken`](https://learn.microsoft.com/en-us/dotnet/api/system.threading.cancellationtoken) and include it when calling `ExecuteAsync()`:
 
 ```csharp
+using System.Threading;
+using CliWrap;
+
 using var cts = new CancellationTokenSource();
 
-// Cancel automatically after a timeout of 10 seconds
+// Cancel after a timeout of 10 seconds
 cts.CancelAfter(TimeSpan.FromSeconds(10));
 
-var result = await Cli.Wrap("path/to/exe").ExecuteAsync(cts.Token);
+var result = await Cli.Wrap("foo").ExecuteAsync(cts.Token);
 ```
 
 In the event of a cancellation request, the underlying process will be killed and `ExecuteAsync()` will throw an exception of type `OperationCanceledException` (or its derivative, `TaskCanceledException`).
@@ -622,33 +719,74 @@ You will need to catch this exception in your code to recover from cancellation:
 ```csharp
 try
 {
-    await Cli.Wrap("path/to/exe").ExecuteAsync(cts.Token);
+    await Cli.Wrap("foo").ExecuteAsync(cts.Token);
 }
 catch (OperationCanceledException)
 {
-    // Command was cancelled
+    // Command was canceled
+}
+```
+
+Besides outright killing the process, you can also request cancellation in a more graceful way by sending an interrupt signal.
+To do that, pass an additional cancellation token to `ExecuteAsync()` that corresponds to that request:
+
+```csharp
+using var forcefulCts = new CancellationTokenSource();
+using var gracefulCts = new CancellationTokenSource();
+
+// Cancel forcefully after a timeout of 10 seconds.
+// This serves as a fallback in case graceful cancellation
+// takes too long.
+forcefulCts.CancelAfter(TimeSpan.FromSeconds(10));
+
+// Cancel gracefully after a timeout of 7 seconds.
+// If the process takes too long to respond to graceful
+// cancellation, it will get killed by forceful cancellation
+// 3 seconds later (as configured above).
+gracefulCts.CancelAfter(TimeSpan.FromSeconds(7));
+
+var result = await Cli.Wrap("foo").ExecuteAsync(forcefulCts.Token, gracefulCts.Token);
+```
+
+Requesting graceful cancellation in **CliWrap** is functionally equivalent to pressing `Ctrl+C` in the console window.
+The underlying process may handle this signal to perform last-minute critical work before finally exiting on its own terms.
+
+Graceful cancellation is inherently cooperative, so it's possible that the process may take too long to fulfill the request or choose to ignore it altogether.
+In the above example, this risk is mitigated by additionally scheduling a delayed forceful cancellation that prevents the command from hanging.
+
+If you are executing a command inside a method and don't want to expose those implementation details to the caller, you can rely on the following pattern to use the provided token for graceful cancellation and extend it with a forceful fallback:
+
+```csharp
+public async Task GitPushAsync(CancellationToken cancellationToken = default)
+{
+    using var forcefulCts = new CancellationTokenSource();
+
+    // When the cancellation token is triggered,
+    // schedule forceful cancellation as a fallback.
+    await using var link = cancellationToken.Register(() =>
+        forcefulCts.CancelAfter(TimeSpan.FromSeconds(3))
+    );
+
+    await Cli.Wrap("git")
+        .WithArguments(["push"])
+        .ExecuteAsync(forcefulCts.Token, cancellationToken);
 }
 ```
 
 > **Note**:
 > Similarly to `ExecuteAsync()`, cancellation is also supported by `ExecuteBufferedAsync()`, `ListenAsync()`, and `Observe()`.
 
-> **Note**:
-> You can read more about `CancellationToken` in .NET [here](https://docs.microsoft.com/en-us/dotnet/api/system.threading.cancellationtoken).
+### Retrieving process-related information
 
-### Retrieving process ID
-
-The task returned by `ExecuteAsync()` and `ExecuteBufferedAsync()` is in fact not a regular `Task<T>`, but an instance of `CommandTask<T>`.
-This is a special awaitable object that contains additional information related to the currently executing command.
-
-You can inspect the task while it's running to get the ID of the process that was started by the associated command:
+The task returned by `ExecuteAsync()` and `ExecuteBufferedAsync()` is, in fact, not a regular `Task<T>`, but an instance of `CommandTask<T>`.
+This is a specialized awaitable object that contains additional information about the process associated with the executing command:
 
 ```csharp
-var task = Cli.Wrap("path/to/exe")
-    .WithArguments("--foo bar")
+var task = Cli.Wrap("foo")
+    .WithArguments(["bar"])
     .ExecuteAsync();
 
-// Get the process ID (for example, for logging purposes)
+// Get the process ID
 var processId = task.ProcessId;
 
 // Wait for the task to complete

@@ -11,18 +11,21 @@ namespace CliWrap.Buffered;
 public static class BufferedCommandExtensions
 {
     /// <summary>
-    /// Executes the command asynchronously.
-    /// The result of this execution contains the standard output and standard error streams
-    /// buffered in-memory as strings.
+    /// Executes the command asynchronously with buffering.
+    /// Data written to the standard output and standard error streams is decoded as text
+    /// and returned as part of the result object.
     /// </summary>
     /// <remarks>
     /// This method can be awaited.
     /// </remarks>
+    // TODO: (breaking change) use optional parameters and remove the other overload
     public static CommandTask<BufferedCommandResult> ExecuteBufferedAsync(
         this Command command,
         Encoding standardOutputEncoding,
         Encoding standardErrorEncoding,
-        CancellationToken cancellationToken = default)
+        CancellationToken forcefulCancellationToken,
+        CancellationToken gracefulCancellationToken
+    )
     {
         var stdOutBuffer = new StringBuilder();
         var stdErrBuffer = new StringBuilder();
@@ -37,43 +40,70 @@ public static class BufferedCommandExtensions
             PipeTarget.ToStringBuilder(stdErrBuffer, standardErrorEncoding)
         );
 
-        var commandPiped = command
+        var commandWithPipes = command
             .WithStandardOutputPipe(stdOutPipe)
-            .WithStandardErrorPipe(stdErrPipe)
-            // Disable validation because we have our own
-            .WithValidation(CommandResultValidation.None);
+            .WithStandardErrorPipe(stdErrPipe);
 
-        return commandPiped
-            .ExecuteAsync(cancellationToken)
-            .Select(r =>
+        return commandWithPipes
+            .ExecuteAsync(forcefulCancellationToken, gracefulCancellationToken)
+            .Bind(async task =>
             {
-                // Transform the result
-                var result = new BufferedCommandResult(
-                    r.ExitCode,
-                    r.StartTime,
-                    r.ExitTime,
-                    stdOutBuffer.ToString(),
-                    stdErrBuffer.ToString()
-                );
-
-                // We perform validation separately here because we want to include stderr in the exception as well
-                if (result.ExitCode != 0 && command.Validation.IsZeroExitCodeValidationEnabled())
+                try
                 {
-                    throw CommandExecutionException.ValidationError(
-                        command,
+                    var result = await task;
+
+                    return new BufferedCommandResult(
                         result.ExitCode,
-                        result.StandardError.Trim()
+                        result.StartTime,
+                        result.ExitTime,
+                        stdOutBuffer.ToString(),
+                        stdErrBuffer.ToString()
                     );
                 }
+                catch (CommandExecutionException ex)
+                {
+                    throw new CommandExecutionException(
+                        ex.Command,
+                        ex.ExitCode,
+                        $"""
+                        Command execution failed, see the inner exception for details.
 
-                return result;
+                        Standard error:
+                        {stdErrBuffer.ToString().Trim()}
+                        """,
+                        ex
+                    );
+                }
             });
     }
 
     /// <summary>
-    /// Executes the command asynchronously.
-    /// The result of this execution contains the standard output and standard error streams
-    /// buffered in-memory as strings.
+    /// Executes the command asynchronously with buffering.
+    /// Data written to the standard output and standard error streams is decoded as text
+    /// and returned as part of the result object.
+    /// </summary>
+    /// <remarks>
+    /// This method can be awaited.
+    /// </remarks>
+    public static CommandTask<BufferedCommandResult> ExecuteBufferedAsync(
+        this Command command,
+        Encoding standardOutputEncoding,
+        Encoding standardErrorEncoding,
+        CancellationToken cancellationToken = default
+    )
+    {
+        return command.ExecuteBufferedAsync(
+            standardOutputEncoding,
+            standardErrorEncoding,
+            cancellationToken,
+            CancellationToken.None
+        );
+    }
+
+    /// <summary>
+    /// Executes the command asynchronously with buffering.
+    /// Data written to the standard output and standard error streams is decoded as text
+    /// and returned as part of the result object.
     /// </summary>
     /// <remarks>
     /// This method can be awaited.
@@ -81,20 +111,26 @@ public static class BufferedCommandExtensions
     public static CommandTask<BufferedCommandResult> ExecuteBufferedAsync(
         this Command command,
         Encoding encoding,
-        CancellationToken cancellationToken = default) =>
-        command.ExecuteBufferedAsync(encoding, encoding, cancellationToken);
+        CancellationToken cancellationToken = default
+    )
+    {
+        return command.ExecuteBufferedAsync(encoding, encoding, cancellationToken);
+    }
 
     /// <summary>
-    /// Executes the command asynchronously.
-    /// The result of this execution contains the standard output and standard error streams
-    /// buffered in-memory as strings.
-    /// Uses <see cref="Console.OutputEncoding" /> to decode byte streams.
+    /// Executes the command asynchronously with buffering.
+    /// Data written to the standard output and standard error streams is decoded as text
+    /// and returned as part of the result object.
+    /// Uses <see cref="Encoding.Default" /> for decoding.
     /// </summary>
     /// <remarks>
     /// This method can be awaited.
     /// </remarks>
     public static CommandTask<BufferedCommandResult> ExecuteBufferedAsync(
         this Command command,
-        CancellationToken cancellationToken = default) =>
-        command.ExecuteBufferedAsync(Console.OutputEncoding, cancellationToken);
+        CancellationToken cancellationToken = default
+    )
+    {
+        return command.ExecuteBufferedAsync(Encoding.Default, cancellationToken);
+    }
 }

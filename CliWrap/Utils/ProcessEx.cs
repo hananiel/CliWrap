@@ -2,61 +2,53 @@
 using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
+using CliWrap.Utils.Extensions;
 
 namespace CliWrap.Utils;
 
-internal class ProcessEx : IDisposable
+internal class ProcessEx(ProcessStartInfo startInfo) : IDisposable
 {
-    private readonly Process _nativeProcess;
+    private readonly Process _nativeProcess = new() { StartInfo = startInfo };
 
-    private readonly TaskCompletionSource<object?> _exitTcs =
-        new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private readonly TaskCompletionSource<object?> _exitTcs = new(
+        TaskCreationOptions.RunContinuationsAsynchronously
+    );
 
-    private CancellationTokenSource? _waitTimeoutCts;
-    private CancellationTokenRegistration? _waitTimeoutRegistration;
+    public int Id => _nativeProcess.Id;
 
-    public int Id { get; private set; }
-
-    public bool IsExited { get; private set; }
-
-    public bool IsKilled { get; private set; }
+    public string Name =>
+        // Can't rely on ProcessName because it becomes inaccessible after the process exits
+        Path.GetFileName(_nativeProcess.StartInfo.FileName);
 
     // We are purposely using Stream instead of StreamWriter/StreamReader to push the concerns of
     // writing and reading to PipeSource/PipeTarget at the higher level.
 
-    public Stream StandardInput { get; private set; } = Stream.Null;
+    public Stream StandardInput => _nativeProcess.StandardInput.BaseStream;
 
-    public Stream StandardOutput { get; private set; } = Stream.Null;
+    public Stream StandardOutput => _nativeProcess.StandardOutput.BaseStream;
 
-    public Stream StandardError { get; private set; } = Stream.Null;
+    public Stream StandardError => _nativeProcess.StandardError.BaseStream;
 
-    public int ExitCode { get; private set; }
-
+    // We have to keep track of StartTime ourselves because it becomes inaccessible after the process exits
+    // https://github.com/Tyrrrz/CliWrap/issues/93
     public DateTimeOffset StartTime { get; private set; }
 
+    // We have to keep track of ExitTime ourselves because it becomes inaccessible after the process exits
+    // https://github.com/Tyrrrz/CliWrap/issues/93
     public DateTimeOffset ExitTime { get; private set; }
 
-    public ProcessEx(ProcessStartInfo startInfo) =>
-        _nativeProcess = new Process { StartInfo = startInfo };
+    public int ExitCode => _nativeProcess.ExitCode;
 
-    public void Start()
+    public void Start(Action<Process>? configureProcess = null)
     {
-        Debug.Assert(Id == default, "Attempt to launch a process more than once.");
-
         // Hook up events
         _nativeProcess.EnableRaisingEvents = true;
         _nativeProcess.Exited += (_, _) =>
         {
-            IsExited = true;
-            ExitCode = _nativeProcess.ExitCode;
-
-            // Calculate our own ExitTime to be consistent with StartTime
             ExitTime = DateTimeOffset.Now;
-
-            // We don't handle cancellation here.
-            // If necessary, proper exception will be thrown upstream.
             _exitTcs.TrySetResult(null);
         };
 
@@ -66,42 +58,75 @@ internal class ProcessEx : IDisposable
             if (!_nativeProcess.Start())
             {
                 throw new InvalidOperationException(
-                    $"Failed to start a process with file path '{_nativeProcess.StartInfo.FileName}'. " +
-                    "Target file is not an executable or lacks execute permissions."
+                    $"Failed to start a process with file path '{_nativeProcess.StartInfo.FileName}'. "
+                        + "Target file is not an executable or lacks execute permissions."
                 );
             }
+
+            StartTime = DateTimeOffset.Now;
+
+            // Apply custom configurations
+            configureProcess?.Invoke(_nativeProcess);
         }
         catch (Win32Exception ex)
         {
             throw new Win32Exception(
-                $"Failed to start a process with file path '{_nativeProcess.StartInfo.FileName}'. " +
-                "Target file or working directory doesn't exist, or the provided credentials are invalid.",
+                $"Failed to start a process with file path '{_nativeProcess.StartInfo.FileName}'. "
+                    + "Target file or working directory doesn't exist, or the provided credentials are invalid.",
                 ex
             );
         }
-
-        // We can't access Process.StartTime if the process has already exited.
-        // It's entirely possible that the process exits so fast that by the time
-        // we try to get the start time, it won't be accessible anymore.
-        // Calculating time ourselves is slightly inaccurate, but at least we can
-        // guarantee it won't fail.
-        // https://github.com/Tyrrrz/CliWrap/issues/93
-        StartTime = DateTimeOffset.Now;
-
-        // Copy metadata and stream references
-        Id = _nativeProcess.Id;
-        StandardInput = _nativeProcess.StandardInput.BaseStream;
-        StandardOutput = _nativeProcess.StandardOutput.BaseStream;
-        StandardError = _nativeProcess.StandardError.BaseStream;
     }
 
+    // Sends SIGINT
+    public void Interrupt()
+    {
+        bool TryInterrupt()
+        {
+            try
+            {
+                // On Windows, we need to launch an external executable that will attach
+                // to the target process's console and then send a Ctrl+C event to it.
+                // https://github.com/Tyrrrz/CliWrap/issues/47
+                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+                {
+                    using var signaler = WindowsSignaler.Deploy();
+                    return signaler.TrySend(_nativeProcess.Id, 0);
+                }
+
+                // On Unix, we can just send the signal to the process directly
+                if (
+                    RuntimeInformation.IsOSPlatform(OSPlatform.Linux)
+                    || RuntimeInformation.IsOSPlatform(OSPlatform.OSX)
+                )
+                {
+                    return NativeMethods.Unix.Kill(_nativeProcess.Id, 2) == 0;
+                }
+
+                // Unsupported platform
+                return false;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        if (!TryInterrupt())
+        {
+            // In case of failure, revert to the default behavior of killing the process.
+            // Ideally, we should throw an exception here, but this method is called from
+            // a cancellation callback upstream, so we can't do that.
+            Kill();
+            Debug.Fail("Failed to send an interrupt signal.");
+        }
+    }
+
+    // Sends SIGKILL
     public void Kill()
     {
-        Debug.Assert(!IsKilled, "Attempt to kill a process more than once.");
-
         try
         {
-            IsKilled = true;
             _nativeProcess.Kill(true);
         }
         catch when (_nativeProcess.HasExited)
@@ -110,26 +135,21 @@ internal class ProcessEx : IDisposable
         }
         catch
         {
-            // Either we actually failed to kill the process, or the system hasn't finished processing
-            // the kill request yet. In either case, we can't really do anything about it.
-            // Set up a timeout that will resolve the task after a while, in case the process hasn't exited by then.
-            _waitTimeoutCts = new CancellationTokenSource();
-            _waitTimeoutRegistration = _waitTimeoutCts.Token.Register(() =>
-            {
-                // We don't cancel the task here. Proper exception will be thrown upstream.
-                if (_exitTcs.TrySetResult(null))
-                    Debug.Fail("Process termination timed out.");
-            });
-            _waitTimeoutCts.CancelAfter(TimeSpan.FromSeconds(3));
+            // The process either failed to exit or is in the process of exiting.
+            // We can't really do anything about it, so just ignore the exception.
+            Debug.Fail("Failed to kill the process.");
         }
     }
 
-    public async Task WaitUntilExitAsync() => await _exitTcs.Task.ConfigureAwait(false);
-
-    public void Dispose()
+    public async Task WaitUntilExitAsync(CancellationToken cancellationToken = default)
     {
-        _waitTimeoutRegistration?.Dispose();
-        _waitTimeoutCts?.Dispose();
-        _nativeProcess.Dispose();
+        await using (
+            cancellationToken
+                .Register(() => _exitTcs.TrySetCanceled(cancellationToken))
+                .ToAsyncDisposable()
+        )
+            await _exitTcs.Task.ConfigureAwait(false);
     }
+
+    public void Dispose() => _nativeProcess.Dispose();
 }

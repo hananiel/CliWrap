@@ -8,35 +8,31 @@ namespace CliWrap;
 /// <summary>
 /// Represents an asynchronous execution of a command.
 /// </summary>
-public partial class CommandTask<TResult> : IDisposable
+public partial class CommandTask<TResult>(Task<TResult> task, int processId) : IDisposable
 {
     /// <summary>
-    /// Inner task.
+    /// Underlying task.
     /// </summary>
-    public Task<TResult> Task { get; }
+    public Task<TResult> Task { get; } = task;
 
     /// <summary>
     /// Underlying process ID.
     /// </summary>
-    public int ProcessId { get; }
+    public int ProcessId { get; } = processId;
 
-    /// <summary>
-    /// Initializes an instance of <see cref="CommandTask{TResult}" />.
-    /// </summary>
-    public CommandTask(Task<TResult> task, int processId)
-    {
-        Task = task;
-        ProcessId = processId;
-    }
+    internal CommandTask<T> Bind<T>(Func<Task<TResult>, Task<T>> transform) =>
+        new(transform(Task), ProcessId);
 
     /// <summary>
     /// Lazily maps the result of the task using the specified transform.
     /// </summary>
-    public CommandTask<T> Select<T>(Func<TResult, T> transform) => new(Task.Select(transform), ProcessId);
+    // TODO: (breaking change) this should not be publicly exposed
+    public CommandTask<T> Select<T>(Func<TResult, T> transform) =>
+        Bind(task => task.Select(transform));
 
     /// <summary>
-    /// Gets the awaiter of the inner task.
-    /// Used to facilitate async/await expressions on this object.
+    /// Gets the awaiter of the underlying task.
+    /// Used to enable await expressions on this object.
     /// </summary>
     public TaskAwaiter<TResult> GetAwaiter() => Task.GetAwaiter();
 
@@ -46,17 +42,15 @@ public partial class CommandTask<TResult> : IDisposable
     public ConfiguredTaskAwaitable<TResult> ConfigureAwait(bool continueOnCapturedContext) =>
         Task.ConfigureAwait(continueOnCapturedContext);
 
-    /// <summary>
-    /// Disposes the inner task.
-    /// There is no need to call this manually, unless you are not planning to await the task.
-    /// </summary>
+    /// <inheritdoc />
     public void Dispose() => Task.Dispose();
 }
 
 public partial class CommandTask<TResult>
 {
     /// <summary>
-    /// Casts a command task into a regular task.
+    /// Converts the command task into a regular task.
     /// </summary>
-    public static implicit operator Task<TResult>(CommandTask<TResult> commandTask) => commandTask.Task;
+    public static implicit operator Task<TResult>(CommandTask<TResult> commandTask) =>
+        commandTask.Task;
 }

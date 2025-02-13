@@ -20,7 +20,7 @@ public class GenerateTextCommand : ICommand
     public OutputTarget Target { get; init; } = OutputTarget.StdOut;
 
     [CommandOption("length")]
-    public int Length { get; init; } = 1000;
+    public int Length { get; init; } = 100_000;
 
     [CommandOption("lines")]
     public int LinesCount { get; init; } = 1;
@@ -30,19 +30,14 @@ public class GenerateTextCommand : ICommand
         for (var line = 0; line < LinesCount; line++)
         {
             var buffer = new StringBuilder(Length);
+
             for (var i = 0; i < Length; i++)
             {
-                buffer.Append(
-                    _allowedChars[_random.Next(0, _allowedChars.Length)]
-                );
+                buffer.Append(_allowedChars[_random.Next(0, _allowedChars.Length)]);
             }
-
-            var text = buffer.ToString();
 
             foreach (var writer in console.GetWriters(Target))
-            {
-                await writer.WriteLineAsync(text);
-            }
+                await writer.WriteLineAsync(buffer.ToString());
         }
     }
 }

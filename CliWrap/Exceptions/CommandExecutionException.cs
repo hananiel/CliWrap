@@ -1,54 +1,33 @@
-﻿namespace CliWrap.Exceptions;
+﻿using System;
+using System.Diagnostics.CodeAnalysis;
+
+namespace CliWrap.Exceptions;
 
 /// <summary>
 /// Exception thrown when the command fails to execute correctly.
 /// </summary>
-public partial class CommandExecutionException : CliWrapException
+public class CommandExecutionException(
+    ICommandConfiguration command,
+    int exitCode,
+    string message,
+    Exception? innerException = null
+) : CliWrapException(message, innerException)
 {
+    /// <summary>
+    /// Initializes an instance of <see cref="CommandExecutionException" />.
+    /// </summary>
+    // TODO: (breaking change) remove in favor of an optional parameter in the constructor above
+    [ExcludeFromCodeCoverage]
+    public CommandExecutionException(ICommandConfiguration command, int exitCode, string message)
+        : this(command, exitCode, message, null) { }
+
     /// <summary>
     /// Command that triggered the exception.
     /// </summary>
-    public ICommandConfiguration Command { get; }
+    public ICommandConfiguration Command { get; } = command;
 
     /// <summary>
     /// Exit code returned by the process.
     /// </summary>
-    public int ExitCode { get; }
-
-    /// <summary>
-    /// Initializes an instance of <see cref="CommandExecutionException" />.
-    /// </summary>
-    public CommandExecutionException(ICommandConfiguration command, int exitCode, string message)
-        : base(message)
-    {
-        Command = command;
-        ExitCode = exitCode;
-    }
-}
-
-public partial class CommandExecutionException
-{
-    internal static CommandExecutionException ValidationError(
-        ICommandConfiguration command,
-        int exitCode) => new(command, exitCode, @$"
-Underlying process reported a non-zero exit code ({exitCode}).
-
-Command:
-  {command.TargetFilePath} {command.Arguments}
-
-You can suppress this validation by calling `WithValidation(CommandResultValidation.None)` on the command.".Trim());
-
-    internal static CommandExecutionException ValidationError(
-        ICommandConfiguration command,
-        int exitCode,
-        string standardError) => new(command, exitCode, @$"
-Underlying process reported a non-zero exit code ({exitCode}).
-
-Command:
-  {command.TargetFilePath} {command.Arguments}
-
-Standard error:
-  {standardError}
-
-You can suppress this validation by calling `WithValidation(CommandResultValidation.None)` on the command.".Trim());
+    public int ExitCode { get; } = exitCode;
 }
